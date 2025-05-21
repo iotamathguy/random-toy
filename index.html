@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Draw & Cover-Time Simulator</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    #controls {
+      position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.8);
+      padding: 8px; border-radius: 4px;
+    }
+    button { margin-right: 8px; }
+    #coverTime { font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<canvas id="graphCanvas"></canvas>
+<div id="controls">
+  <button id="runWalk">Run Random Walk</button>
+  <span>Cover time: <span id="coverTime">–</span> steps</span>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('graphCanvas');
+  const ctx = canvas.getContext('2d');
+  let W, H;
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    draw();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const NODE_RADIUS = 8;
+  const nodes = [];        // { x, y }
+  const edges = new Set(); // "i,j" with i<j
+
+  // helper: distance²
+  function dist2(a, b) {
+    const dx = a.x - b.x, dy = a.y - b.y;
+    return dx*dx + dy*dy;
+  }
+
+  // find node under (x,y)
+  function findNode(x, y) {
+    return nodes.findIndex(n => dist2(n, {x,y}) <= NODE_RADIUS*NODE_RADIUS);
+  }
+
+  let dragging = null;  // index of node we started on
+  let mouseX = 0, mouseY = 0;
+
+  canvas.addEventListener('mousedown', e => {
+    mouseX = e.clientX; mouseY = e.clientY;
+    const i = findNode(mouseX, mouseY);
+    if (i >= 0) {
+      dragging = i;
+    } else {
+      // create new node
+      nodes.push({ x: mouseX, y: mouseY });
+      dragging = nodes.length - 1;
+    }
+    draw();
+  });
+
+  canvas.addEventListener('mousemove', e => {
+    mouseX = e.clientX; mouseY = e.clientY;
+    if (dragging !== null) draw();
+  });
+
+  canvas.addEventListener('mouseup', e => {
+    const upX = e.clientX, upY = e.clientY;
+    const j = findNode(upX, upY);
+    if (dragging !== null && j >= 0 && j !== dragging) {
+      const [i0, i1] = [Math.min(dragging, j), Math.max(dragging, j)];
+      edges.add(`${i0},${i1}`);
+    }
+    dragging = null;
+    draw();
+  });
+
+  function draw() {
+    ctx.clearRect(0,0,W,H);
+    // edges
+    ctx.strokeStyle = '#444';
+    edges.forEach(eid => {
+      const [i,j] = eid.split(',').map(Number);
+      const a = nodes[i], b = nodes[j];
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    });
+    // preview drag
+    if (dragging !== null) {
+      const a = nodes[dragging];
+      ctx.strokeStyle = '#888';
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(mouseX, mouseY);
+      ctx.stroke();
+    }
+    // nodes
+    nodes.forEach(n => {
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, NODE_RADIUS, 0, 2*Math.PI);
+      ctx.fill();
+      ctx.stroke();
+    });
+  }
+
+  // build adjacency list
+  function buildAdj() {
+    const adj = nodes.map(() => []);
+    edges.forEach(eid => {
+      const [i,j] = eid.split(',').map(Number);
+      adj[i].push(j);
+      adj[j].push(i);
+    });
+    return adj;
+  }
+
+  // run one random‐walk cover‐time sim
+  function simulateCoverTime() {
+    const n = nodes.length;
+    if (n === 0) return 0;
+    const adj = buildAdj();
+    // ensure graph is connected (or else infinite cover‐time)
+    // we'll just detect stuck if a node has no edges
+    if (adj.some(neis => neis.length === 0)) return Infinity;
+
+    const visited = new Array(n).fill(false);
+    let cur = Math.floor(Math.random() * n);
+    visited[cur] = true;
+    let countVisited = 1;
+    let steps = 0;
+
+    while (countVisited < n) {
+      const neis = adj[cur];
+      cur = neis[Math.floor(Math.random() * neis.length)];
+      if (!visited[cur]) {
+        visited[cur] = true;
+        countVisited ++;
+      }
+      steps ++;
+      // safety cap to prevent infinite loop
+      if (steps > 1e7) break;
+    }
+    return steps;
+  }
+
+  document.getElementById('runWalk').addEventListener('click', () => {
+    const t = simulateCoverTime();
+    const disp = (t === Infinity ? '∞ (graph not fully connected)' : t);
+    document.getElementById('coverTime').textContent = disp;
+  });
+
+  draw();
+})();
+</script>
+
+</body>
+</html>
